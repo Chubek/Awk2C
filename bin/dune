@@ -1,4 +1,12 @@
+; TODO
 (executable
  (public_name awk2c)
- (name main)
- (libraries awk2c))
+ (libraries awk2c.lib)
+ (modes native)
+ (modules semant codegen main))
+
+; TODO
+(rule
+  (target awk_runtime.o)
+  (deps ../runtime/awk_runtime.c ../runtime/awk_runtime.h)
+  (action (run cc -c -o %{targets} %{deps}))

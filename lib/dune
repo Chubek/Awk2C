@@ -1,2 +1,6 @@
 (library
- (name awk2c))
+ (name awk2c)
+ (public_name awk2c.lib)
+ (modules ast lexer parser)
+ (preprocess pps menhir)
+ (libraries))
