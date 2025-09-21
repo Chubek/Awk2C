@@ -13,7 +13,7 @@ module ControlTransfer = struct
   type t =
     | OnZero
     | Jump of Instr.label
-    | Call of Symtbl.ident
+    | Call of Instr.temp
     | Fallthrough
 
   let compare = compare
@@ -22,11 +22,11 @@ end
 
 module DataTransfer = struct
   type t = 
-    | Use of Symtbl.IdentSet.t
-    | Def of Symtbl.IdentSet.t
+    | Use of Instr.TempSet.t
+    | Def of Instr.TempSet.t
 
-  let compare = Symtbl.IdentSet.compare
-  let default = Symtbl.IdentSet.empty
+  let compare = Instr.TempSet.compare
+  let default = Instr.TempSet.empty
 end
 
 module CFG = Graph.Imperative.Digraph.ConcreteLabeled(BasicBlock)(ControlTransfer)
