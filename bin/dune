@@ -1,5 +1,6 @@
 ; TODO
 (executable
+ (name awk2c)
  (public_name awk2c)
  (libraries awk2c.lib)
  (modes native)
