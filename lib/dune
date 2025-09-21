@@ -1,6 +1,6 @@
 (library
  (name awk2c.lib)
  (public_name awk2c.lib)
- (modules ast cfg dfg symtbl lexer parser)
+ (modules ast cfg dfg symtbl instr lexer parser)
  (preprocess pps menhir)
  (libraries))
