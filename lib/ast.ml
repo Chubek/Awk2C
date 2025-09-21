@@ -1,5 +1,5 @@
-module NodeType = struct
-  type toplvl = 
+module ASTNodeType = struct
+  type t = 
     | FuncDefn of { name: ident
                   ; formals: ident list
                   ; body: block
@@ -139,3 +139,12 @@ module NodeType = struct
     | Number of float
     | String of string
 end
+
+module ASTNode = struct
+        type t = NodeType.t
+        val compare = compare
+        val hash = Hashtbl.hash
+        val equal = (=)
+end
+
+module AST = Graph.Imperative.Digraph.Concrete(ASTNode)
