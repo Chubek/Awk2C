@@ -5,22 +5,18 @@
 (generate_opam_files true)
 
 (source
- (github username/reponame))
+ (github Chubek/Awk2C))
 
-(authors "Author Name <author@example.com>")
-
-(maintainers "Maintainer Name <maintainer@example.com>")
+(authors "Chubak Bidpaa <chubakbidpaa@riseup.net>")
 
 (license LICENSE)
 
-(documentation https://url/to/documentation)
+(documentation https://chubek.github.io/awk2c)
 
 (package
  (name awk2c)
- (synopsis "A short synopsis")
- (description "A longer description")
+ (synopsis "A compiler for Awk targeting self-contained C")
  (depends ocaml)
  (tags
-  ("add topics" "to describe" your project)))
+  ("awk" "unix" "programming languages" "compiler" "transpiler" "awk transpiler")))
 
-; See the complete stanza docs at https://dune.readthedocs.io/en/stable/reference/dune-project/index.html
