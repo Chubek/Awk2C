@@ -133,7 +133,7 @@ module ASTNodeType = struct
     | Singular of ident
     | Associative of ident * expr list 
 
-  and ident = string * Intrin.slot option
+  and ident = string * Symtbl.slot option
 
   and const =
     | Number of float
