@@ -2,8 +2,15 @@
 (executable
  (name awk2c)
  (public_name awk2c)
- (libraries awk2c.lib)
+ (libraries 
+   awk2c.lib
+   fmt
+   language-c
+   containers
+   ocamlgraph
+   mustache) ; libraries are temporary, will add/remove
  (modes native)
+ (preprocess (pps cppo))
  (modules semant codegen main))
 
 ; TODO
