@@ -12,7 +12,7 @@ end
 module ControlTransfer = struct
   type t =
     | OnZero
-    | Jump of Symtbl.label
+    | Jump of Instr.label
     | Call of Symtbl.ident
     | Fallthrough
 
