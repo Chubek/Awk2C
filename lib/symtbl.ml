@@ -3,6 +3,7 @@ module Symtbl = struct
   module IdentSet = Set.Make(ident)
   module IdentMap = Map.Make(ident)
 
+  (* TODO *)
   type symbol =
     | Global
     | Local
@@ -13,7 +14,19 @@ module Symtbl = struct
     | Builtin
     | Function
 
-  type t = symbol IdentMap.t
+  let tbl = ref IdentMap.empty
+
+  let insert_symbol id sym = 
+    tbl := IdentMap.add id sym !tbl
+
+  let get_symbol id =
+    IdentMap.find id !tbl
+
+  let exists_symbol id =
+    Option.is_some (IdentMap.find_opt id !tbl)
+
+  let remove_symbol id =
+    tlb := IdentMap.remove id !tbl
 
   let builtin_varnames: ident array = [| "FS"
                                        ; "NR"
