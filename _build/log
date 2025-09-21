@@ -1,0 +1,6 @@
+# dune init proj awk2c
+# OCAMLPARAM: unset
+# Shared cache: enabled-except-user-rules
+# Shared cache location: /home/chubakpdp11/.cache/dune/db
+# Workspace root: /home/chubakpdp11/aleph/awk2c/awk2c
+# Auto-detected concurrency: 16
