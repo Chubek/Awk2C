@@ -13,11 +13,23 @@ module Symtbl = struct
     | Builtin
     | Function
 
-  type t = symbol IdentMap
+  type t = symbol IdentMap.t
 
-  let builtin_varnames: ident list = [ "FS"
-                                     ; "NR"
-                                     ; "FNR"
-                                     ; (* TODO *)
-                                     ]
+  let builtin_varnames: ident array = [| "FS"
+                                       ; "NR"
+                                       ; "FNR"
+                                       ; "FS"
+                                       ; "OFS"
+                                       ; "RS"
+                                       ; "ORS"
+                                       ; "FILENAME"
+                                       ; "ARGV"
+                                       ; "ARGC"
+                                       ; "ARGIND"
+                                       ; "RSTART"
+                                       ; "RLENGTH"
+                                       ; "SUBSEP"
+                                      |]
+
+  let id_is_builtin id = List.mem builtin_varnames id
 end
