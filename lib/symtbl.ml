@@ -45,4 +45,6 @@ module Symtbl = struct
                                       |]
 
   let id_is_builtin id = List.mem builtin_varnames id
+
+  let generate_temp_id prefix = prefix ^ "_" ^ (Awk2CUtils.random_string)
 end
