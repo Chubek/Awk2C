@@ -133,9 +133,7 @@ module ASTNodeType = struct
     | Singular of ident
     | Associative of ident * expr list 
 
-  and ident =
-    | Variable of string
-    | AssocArray of string * expr list
+  and ident = Symtbl.ident
 
   and const =
     | Number of float
