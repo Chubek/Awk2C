@@ -1,28 +1,83 @@
 module Instr = struct
   type t =
-    | Expression of expr
-    | Statement of stmt
-
-  and expr =
-    | ConstNumber of float
-    | ConstString of string
-    | ConstERE of string
-    | Variable of temp
-    | Fetch of temp * Environ.t
+    | ConstOp of const_op
+    | MemoryOp of memory_op
+    | ArrayOp of array_op
+    | ControlOp of control_op
     | NumericOp of numeric_op
     | StringOp of string_op
-    | EffectSequence of stmt * expr
-    | CallFn of temp * expr list
+    | EREOp of ere_op
+    | LogicalOp of logical_op
+    | RelationalOp of relational_op
+    | FileOp of file_op
+    | IOOp of io_op
+    | ConvOp of conv_op
+    | MathOp of math_op
+    | SysOp of sys_op
+    | SeqOp of t list
 
-  and stmt =
-    | Store of temp * expr * Environ.t
-    | ExecExpression of expr
-    | Jump of expr * label
-    | CJump of rel_op * expr * expr * label * label
-    | Sequence of stmt * stmt
-    | Label of label
-    | IO of io_op
+  and const_op =
+    | ConstNumber of Runtime.Number.t
+    | ConstString of Runtime.String.t
+    | ConstBool of Runtime.Bool.t
+    | ConstERE of Runtime.ERE.t
+    | ConstRecord of Runtime.Record.t
+    | ConstField of Runtime.Field.t
 
+  and memory_op =
+    | Load of temp
+    | Store of temp * t
+    | Destroy of temp
+
+  and array_op =
+    | MakeArray of int
+    | DestroyArray of temp
+    | LengthArray of temp
+    | IndexArray of t
+
+  and control_op =
+    | Goto of label
+    | MakeLabel of label
+    | JumpZero of temp * label
+    | JumpNonZero of temp * label
+
+  and numeric_op =
+    | Add of temp list
+    | Sub of temp list
+    | Mul of temp list
+    | Div of temp list
+    | Mod of temp list
+
+  and string_op =
+    | Concat of temp list
+    | Split of temp
+    | Length of temp
+    | Substr of temp
+    | ToLower of temp
+    | ToUpper of temp
+    | Index of temp
+    | Format of temp * temp list
+
+  and ere_op =
+    | Match of temp list
+    | Sub of temp list
+    | GSub of temp list
+
+  and math_op =
+    | Rand
+    | Round of temp
+    | SRand of temp
+    | Sqrt of temp
+    | Log10 of temp
+    | Log2 of temp
+    | Exp of temp
+    | Sin of temp
+    | Cos of temp
+    | Atan2 of temp
+
+  and conv_op = 
+    | StrToNum of temp
+    | NumToStr of temp
 
   and label = Symtbl.ident
   and temp = Symtbl.ident
