@@ -11,9 +11,7 @@ end
 
 module ControlTransfer = struct
   type t =
-    | OnZero
-    | Jump of Instr.label
-    | Call of Instr.temp
+    | ConditionalJump
     | Fallthrough
 
   let compare = compare
