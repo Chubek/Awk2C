@@ -153,4 +153,5 @@ module Instr = struct
   let generate_temp = fun () -> Symtbl.generate_temp_id ".T_"
 
   module TempSet = Symtbl.IdentSet
+  module TempMap = Symtbl.IdentMap
 end
