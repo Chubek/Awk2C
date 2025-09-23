@@ -3,4 +3,4 @@
  (public_name awk2c.lib)
  (modules ast flow symtbl instr lexer parser)
  (preprocess pps menhir ocamllex)
- (libraries))
+ (libraries angstrom))
