@@ -12,6 +12,7 @@ module Symtbl = struct
       | Scalar
       | Array
       | Function
+      | Formal
 
     and scope =
       | Global
@@ -36,19 +37,6 @@ module Symtbl = struct
       ; scope = scope
       ; builtin = Runtime.Builtin.is_builtin name
       }
-
-    let create_scalar name scope =
-      create name Scalar scope
-
-    let create_array name scope =
-      create name Array scope
-
-    let create_function name =
-      create name Function Global
-
-    let create_parameter name =
-      create name Local Parameter
-
   end
 
   module Ident = String
@@ -67,7 +55,6 @@ module Symtbl = struct
   let nesting_level tbl =
     (List.length tbl.scopes) - 1
 
-
   let current_scope tbl =
     if (nesting_level tbl) = 0 
     then Symbol.Global
@@ -81,42 +68,52 @@ module Symtbl = struct
 
   let leave_scope tbl =
     match tbl.scopes with
-    | [] -> failwith "No more scopes left"
-    | head :: tail -> tbl.scopes <- tail
+    | [] -> failwith "BUG: Scope list empty"
+    | [_] -> ()
+    | _ :: tail -> tbl.scopes <- tail
+
+  let install_symbol tbl name kind scope =
+    let new_symbol = Symbol.create name kind (if Option.is_none scope 
+                                              then current_scope tbl
+                                              else Option.get scope) in
+    match tbl.scopes with
+    | [] -> failwith "BUG: Scope list empty"
+    | head :: tail -> tbl.scopes <- (IdentMap.add name new_symbol head) :: tail
 
   let install_scalar tbl name =
-    let new_symbol = Symbol.create_scalar name (current_scope tbl) in
-    match tbl.scopes with
-    | [] -> failwith "Scopes empty"
-    | head :: tail -> tbl.scopes <- (IdentMap.add name new_symbol head) :: tail
+    install_symbol tbl name Symbol.Scalar None
 
-  let install_array name =
-    let new_symbol = Symbol.create_array name (current_scope tbl) in
-    match tbl.scopes with
-    | [] -> failwith "Scopes empty"
-    | head :: tail -> tbl.scopes <- (IdentMap.add name new_symbol head) :: tail
+  let install_array tbl name =
+    install_symbol tbl name Symbol.Array None
 
-  let install_function name =
-    let new_symbol = Symbol.create_function name in
-    match tbl.scopes with
-    | [] -> failwith "Scopes empty"
-    | head :: tail -> tbl.scopes <- (IdentMap.add name new_symbol head) :: tail
+  let install_function tbl name =
+    install_symbol tbl name Symbol.Function (Some Symbol.Global)
 
-  let install_param name =
-    let new_symbol = Symbol.create_parameter name in
-    match tbl.scopes with
-    | [] -> failwith "Scopes empty"
-    | head :: tail -> tbl.scopes <- (IdentMap.add name new_symbol head) :: tail
+  let install_param tbl name =
+    install_symbol tbl name Symbol.Formal (Some Symbol.Parameter)
 
   let find_symbol tbl name =
-    let rec find_symbol scopes =
+    let rec find_symbol_aux scopes =
       match scopes with
       | [] -> None
       | [scope] -> IdentMap.find_opt name scope
       | head :: tail -> let sym_opt = IdentMap.find_opt name head in
         if Option.is_some sym_opt then sym_opt
-        else find_symbol tail
+        else find_symbol_aux tail
     in
-    find_symbol tbl.scopes
+    find_symbol_aux tbl.scopes
 
+  let delete_symbol tbl name =
+    let rec delete_symbol_aux scopes acc =
+      match scopes with
+      | [] -> ()
+      | head :: tail ->
+        if (IdentMap.mem name head)
+        then
+          let new_head = IdentMap.remove name head in
+          List.rev_append acc (new_head :: tail)
+        else
+          delete_symbol_aux tail (head :: acc)
+    in
+    tbl.scopes <- delete_symbol_aux tbl.scopes []
 end
