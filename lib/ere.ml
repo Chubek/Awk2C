@@ -2,7 +2,7 @@ module ERE = struct
   module Absyn = struct
     type t =
       | Group of t list
-      | Atom of char
+      | Literal of char
       | Brack of char list * bool
       | Repeat of int option * int option
       | Concat of t list
@@ -19,6 +19,8 @@ module ERE = struct
       }
 
     exception End_of_ERE
+    exception Syntax_Errorr
+    exception Unescaped_Operator
 
     let create lit =
       { lit = lit
@@ -32,6 +34,11 @@ module ERE = struct
       if not (chars_remain ere)
       then raise End_of_ERE
       else ere.lit.[ere.cursor]
+
+    let peek_next =
+      if (>) (String.length ere.lit) (ere.cursor + 1)
+      then ere.lit.[ere.cursor + 1]
+      else '\x00'
 
     let peek_opt ere =
       if (chars_remain ere)
@@ -50,7 +57,16 @@ module ERE = struct
         true
           _ -> false
 
-    let rec parse ere =
+    let consume_while ere pred =
+      let aux acc =
+        match (peek_opt ere) with
+        | Some ch when (pred ch) -> aux (ch :: acc)
+        | _ -> List.rev acc
+      in 
+      aux []
+
+
+    let rec parse_ere ere =
       let left_node = parse_concat ere in
       match (peek_opt ere) with
       | Some '|' ->
@@ -94,13 +110,58 @@ module ERE = struct
           let m = parse_number ere in
           consume_if ere '}';
           (n, m)
-        | _ -> (None, None)
-                 if Option.is_none min
-                 then atom_node
-                 else Absyn.Repeat min, max
+        | _ -> (Some -1, None)
+      in
+      if Option.is_some min && Option.get min = -1
+      then atom_node
+      else Absyn.Repeat min, max
 
+    and parse_atom ere =
+      let ch = consume ere in
+      match ch with
+      | '\\' -> parse_escape ere
+      | '^' -> Absyn.StartAnchor
+      | '$' -> Absyn.EndAnchor
+      | '.' -> Absyn.Wildcard
+      | '(' ->
+        let sub_expr = parse_ere ere in
+        if not (consume_if ere ')')
+        then raise Syntax_Error
+            Absyn.Group sub_expr
+      | '[' -> parse_bracket ere
+      | '*' | '+' | '?' | '{' | '|' | ')' -> raise Unescaped_Operator
+      | _ as ord_char -> Absyn.Literal ord_char
 
+    and parse_number ere =
+      let num_chars = consume_while ere (fun ch -> ch >= '0' && ch <= '9') in
+      if List.is_empty num_chars
+      then None
+      else Some (int_of_string (String.of_seq (List.to_seq num_chars)))
 
+    and parse_escape ere =
+
+    and parse_bracket ere =
+      let negated = consume_if ere '^' in
+      let rec aux acc =
+        match (peek_opt ere) with
+        | Some ':' -> 
+          let class_name = consume_while ere (fun ch -> ch >= 'a' && ch <= 'z') in
+          match class_name with
+          | Some clsnm -> aux ((lookup_classname clsnm) :: acc)
+          | _ -> raise Syntax_Error
+          | Some ']' -> 
+            consume ere |> ignore; 
+            List.rev acc
+          | Some sym1 ->
+            consume ere |> ignore;
+            (match peek_opt ere with
+             | Some '-' when peek_next ere != ']' ->
+               consume ere |> ignore;
+               let sym2 = consume ere in
+               aux ((gen_range sym1 sym2) :: acc)
+             | _ -> aux (sym1 :: acc))
+      in
+      Absyn.Brack (aux [], negated)
 
   end
 end
