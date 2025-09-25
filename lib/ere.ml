@@ -19,8 +19,8 @@ module ERE = struct
       }
 
     exception End_of_ERE
-    exception Syntax_Errorr
-    exception Unescaped_Operator
+    exception Syntax_error
+    exception Unescaped_operator
 
     let create lit =
       { lit = lit
@@ -113,7 +113,7 @@ module ERE = struct
       in
       if Option.is_some min && Option.get min = -1
       then atom_node
-      else Absyn.Repeat min, max
+      else Absyn.Repeat (min, max)
 
     and parse_atom ere =
       let ch = consume ere in
@@ -125,19 +125,25 @@ module ERE = struct
       | '(' ->
         let sub_expr = parse_ere ere in
         if not (consume_if ere ')')
-        then raise Syntax_Error
-            Absyn.Group sub_expr
+        then raise Syntax_error;
+        Absyn.Group sub_expr
       | '[' -> parse_bracket ere
-      | '*' | '+' | '?' | '{' | '|' | ')' -> raise Unescaped_Operator
+      | '*' | '+' | '?' | '{' | '|' | ')' -> raise Unescaped_operator
       | _ as ord_char -> Absyn.Literal ord_char
 
     and parse_number ere =
       let num_chars = consume_while ere (fun ch -> ch >= '0' && ch <= '9') in
       if List.is_empty num_chars
       then None
-      else Some (int_of_string (String.of_seq (List.to_seq num_chars)))
+      else Some (Awk2CUtils.string_to_integer 10 (String.of_seq (List.to_seq num_chars)))
 
-    and parse_escape ere =
+    and parse_hex ere =
+      let hex_chars = consume_while ere (fun ch -> (ch >= '0' && ch <= '9') 
+                                                   && (ch >= 'a' && ch <= 'f')
+                                                   && (ch >= 'A' && ch <= 'F')) in
+      if List.is_empty hex_chars 
+      then None
+      else Some (Awk2CUtils.string_to_integer 16 (String.of_seq (List.to_seq hex_chars)))
 
     and parse_bracket ere =
       let negated = consume_if ere '^' in
@@ -146,8 +152,8 @@ module ERE = struct
         | Some ':' -> 
           let class_name = consume_while ere (fun ch -> ch >= 'a' && ch <= 'z') in
           match class_name with
-          | Some clsnm -> aux ((lookup_classname clsnm) :: acc)
-          | _ -> raise Syntax_Error
+          | Some clsnm -> aux ((lookup_classname clsnm) @ acc)
+          | _ -> raise Syntax_error
           | Some ']' -> 
             consume ere |> ignore; 
             List.rev acc
@@ -157,10 +163,64 @@ module ERE = struct
              | Some '-' when peek_next ere != ']' ->
                consume ere |> ignore;
                let sym2 = consume ere in
-               aux ((gen_range sym1 sym2) :: acc)
+               aux ((gen_char_range sym1 sym2) @ acc)
              | _ -> aux (sym1 :: acc))
       in
       Absyn.Brack (aux [], negated)
 
+    and parse_escape ere =
+      let esc_char = consume ere in
+      match (Char.lowercase_ascii esc_char) with
+      | 'n' -> '\n'
+      | 'r' -> '\r'
+      | 't' -> '\t'
+      | 'f' -> '\x0C'
+      | 'v' -> '\x08'
+      | 'a' -> '\x07'
+      | 'x' | 'u' ->
+        let hex_num = parse_hex ere in
+        match hex_num with
+        | Some code -> Char.code code
+        | None -> raise Syntax_error
+
+    and lookup_classname clsnm =
+      match clsnm with
+      | "alnum" -> (gen_char_range 'a' 'z') 
+                   @ (gen_char_range 'A' 'Z') 
+                   @ (gen_char_range '0' '9')
+      | "ascii" -> gen_char_range '\x00' '\x7F'
+      | "alpha" -> (gen_char_range 'a' 'z') 
+                   @ (gen_char_range 'A' 'Z')
+      | "blank" -> [ '\t' ; '\x20' ]
+      | "cntrl" -> (gen_char_range '\x00' '\x1F') @ [ '\x7F' ]
+      | "digit" -> gen_char_range '0' '9'
+      | "graph" -> gen_char_range '\x21' '\x7E'
+      | "lower" -> gen_char_range 'a' 'z'
+      | "print" -> gen_char_range '\x20' '\x7E'
+      | "punct" -> [
+          '!'; '"'; '#'; '$'; '%'; '&'; '\''; '('; ')'; '*'; '+'; ','; '-'; '.'; '/';
+          ':'; ';'; '<'; '='; '>'; '?'; '@';
+          '['; '\\'; ']'; '^'; '_'; '`';
+          '{'; '|'; '}'; '~'
+        ]
+      | "space" -> [ '\x20' ; '\x0C' ; '\n' ; '\r' ; '\t' ; '\x08' ; '\x07' ]
+      | "upper" -> gen_char_range 'A' 'Z'
+      | "xdigit" -> (gen_char_range '0' '9') 
+                    @ (gen_char_range 'A' 'F') 
+                    @ (gen_char_range 'a' 'f')
+      | _ -> raise Syntax_error
+
+    and gen_char_range fc tc =
+      let start_code, end_code = (Char.code fc, (Char.code tc) + 1)
+    let rec aux acc code = 
+      if code = end_code
+      then List.rev acc
+      else aux ((Char.chr code) :: acc) (code + 1)
+    in
+    aux [] start_code
+  end
+
+  module NFAConstructor = struct
+          (* ??? *)
   end
 end
