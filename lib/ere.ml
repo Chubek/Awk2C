@@ -86,7 +86,7 @@ module ERE = struct
           aux (next_node :: acc)
       in
       match List.rev (aux []) with
-      | [] -> raise "Syntax Error: in ERE"
+      | [] -> raise Syntax_error
       | [node] -> node
       | nodes -> Absyn.Concat nodes
 
@@ -174,6 +174,9 @@ module ERE = struct
       | 'n' -> '\n'
       | 'r' -> '\r'
       | 't' -> '\t'
+      | '"' -> '"'
+      | '\'' -> '\''
+      | '\\' -> '\\'
       | 'f' -> '\x0C'
       | 'v' -> '\x08'
       | 'a' -> '\x07'
@@ -220,7 +223,56 @@ module ERE = struct
     aux [] start_code
   end
 
+  module AutomatonState = struct
+    type t =
+      { uid: int
+      ; accepting: bool
+      }    
+
+    let compare s1 s2 = compare s1.uid s2.uid
+    let hash s = Hashtbl.hash s.uid
+    let equal s1 s2 = (=) s1.uid s2.uid
+
+    let uid_counter = ref 0
+    let next_uid () =
+      let uid = !uid_counter in
+      incr uid_counter;
+      uid
+
+    let create accepting =
+      { uid = next_uid ()
+      ; accepting = accepting
+      }
+
+    let create_dummy () =
+      { uid = -1
+      ; accepting = false
+      }
+  end
+
+  module AutomatonTransition = struct
+    type t = 
+      | Epsilon
+      | OnAny
+      | OnSymbol of char
+
+    let compare = compare
+    let default = Epsilon
+
+  end
+
+  module NFA = Graph.Imperative.Digraph.ConcreteLabeled(AutomatonState)(AutomatonTransition)
+  module DFA = Graph.Imperative.Digraph.ConcreteLabeled(AutomatonState)(AutomatonTransition)
+
   module NFAConstructor = struct
-          (* ??? *)
+    type t =
+      { nfa: NFA.t
+      ; tree: Absyn.t
+      }
+
+    let create tree =
+      { nfa = NFA.create ~size:20
+      ; tree = tree
+      }
   end
 end
