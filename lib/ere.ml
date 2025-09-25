@@ -65,13 +65,12 @@ module ERE = struct
       in 
       aux []
 
-
     let rec parse_ere ere =
       let left_node = parse_concat ere in
       match (peek_opt ere) with
       | Some '|' ->
         consume ere |> ignore;
-        let right_node = parse ere in
+        let right_node = parse_ere ere in
         Absyn.Alt (left_node, right_node)
       | _ -> left_node
 
