@@ -402,8 +402,8 @@ module ERE = struct
       let accept = AutomatonState.create in
       let left_frag = build_nfa { nfacon with tree = left_node } in
       let right_frag = build_nfa { nfacon with tree = right_node } in
-      add_transition nfacon start AutomatonTransition.Epsilon left_frag;
-      add_transition nfacon start AutomatonTransition.Epsilon right_frag;
+      add_transition nfacon start AutomatonTransition.Epsilon left_frag.start;
+      add_transition nfacon start AutomatonTransition.Epsilon right_frag.start;
       add_transition nfacon left_frag.accept AutomatonTransition.Epsilon accept;
       add_transition nfacon right_frag.accept AutomatonTransition.Epsilon accept;
       { start ; accept }
