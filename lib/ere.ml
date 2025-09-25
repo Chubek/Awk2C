@@ -35,7 +35,7 @@ module ERE = struct
       then raise End_of_ERE
       else ere.lit.[ere.cursor]
 
-    let peek_next =
+    let peek_next ere =
       if (>) (String.length ere.lit) (ere.cursor + 1)
       then ere.lit.[ere.cursor + 1]
       else '\x00'
