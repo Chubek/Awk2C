@@ -1,7 +1,7 @@
 module ERE = struct
   module Absyn = struct
     type t =
-      | Group of t list
+      | Group of t
       | Literal of char
       | Brack of char list * bool
       | Repeat of t * int * int
@@ -282,6 +282,18 @@ module ERE = struct
       NFA.add_vertex nfacon.graph src;
       NFA.add_vertex nfacon.graph dst;
       NFA.add_edge_e nfacon.graph (src, lbl, dst)
+
+    let build_nfa nfacon node =
+      match node with
+      | Absyn.Literal ch -> build_literal nfacon ch
+      | Absyn.Alt (left, right) -> build_alt nfacon left right
+      | Absyn.Repeat (expr, min, max) -> build_repeat nfacon expr min max
+      | Absyn.Concat lst -> build_concat nfacon lst
+      | Absyn.Group expr -> build_group nfacon expr
+      | Absyn.Brack (lst, neg) -> build_brack nfacon lst neg
+      | Absyn.Wildcard -> build_wildcard nfacon
+      | Absyn.StartAnchor -> build_start_anchor nfacon
+      | Absyn.EndAnchor -> build_end_anchor nfacon
 
   end
 end
