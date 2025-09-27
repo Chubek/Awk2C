@@ -531,10 +531,325 @@ module ERE = struct
   module DFAConstructor = struct
     type t =
       { start_state: AutomatonStateSet.t
-      ; accept_state: AutomatonStateSet.t
+      ; accept_states: AutomatonStateSet.t list
       ; graph: DFA.t
       }
 
-    (* TODO: Implement *)
+    let epsilon_closure nfa states =
+      let rec closure visited to_visit =
+        match to_visit with
+        | [] -> visited
+        | state :: rest ->
+          if List.mem state visited then
+            closure visited rest
+          else
+            let visited' = state :: visited in
+            let epsilon_neighbors = 
+              try
+                NFA.succ_e nfa state
+                |> List.filter_map (fun edge ->
+                    match NFA.E.label edge with
+                    | AutomatonTransition.Epsilon -> Some (NFA.E.dst edge)
+                    | _ -> None)
+              with Invalid_argument _ -> []
+            in
+            closure visited' (epsilon_neighbors @ rest)
+      in
+      closure [] states
+
+    let move nfa states symbol =
+      List.fold_left
+        (fun acc state ->
+           try
+             NFA.succ_e nfa state
+             |> List.filter_map (fun edge ->
+                 match NFA.E.label edge with
+                 | AutomatonTransition.OnSymbol ch when ch = symbol ->
+                   Some (NFA.E.dst edge)
+                 | AutomatonTransition.OnAny ->                  
+                   if symbol <> '\n' then Some (NFA.E.dst edge) else None
+                 | _ -> None)
+             |> List.append acc
+           with Invalid_argument _ -> acc)
+        [] states
+
+    let collect_alphabet nfa =
+      NFA.fold_edges_e
+        (fun edge acc ->
+           match NFA.E.label edge with
+           | AutomatonTransition.OnSymbol ch -> 
+             if List.mem ch acc then acc else ch :: acc
+           | AutomatonTransition.OnAny ->
+             let rec add_range start stop acc =
+               if start > stop then acc
+               else 
+                 let ch = Char.chr start in
+                 if ch <> '\n' && not (List.mem ch acc) then
+                   add_range (start + 1) stop (ch :: acc)
+                 else
+                   add_range (start + 1) stop acc
+             in
+             add_range 32 126 acc
+           | _ -> acc)
+        nfa []
+
+    let contains_accepting_state states =
+      List.exists (fun s -> s.AutomatonState.accepting) states
+
+    let make_dfa_state nfa_states =
+      List.sort AutomatonState.compare nfa_states
+
+    let build_dfa nfacon =
+      let nfa = nfacon.graph in
+      let start_nfa = nfacon.start_state in
+
+      let dfa = DFA.create () in
+
+      let alphabet = collect_alphabet nfa in
+
+      let start_closure = epsilon_closure nfa [start_nfa] |> make_dfa_state in
+
+      let processed = Hashtbl.create 100 in
+      let unprocessed = Queue.create () in
+      let accept_states = ref [] in
+
+      DFA.add_vertex dfa start_closure;
+      Queue.add start_closure unprocessed;
+
+      if contains_accepting_state start_closure then
+        accept_states := start_closure :: !accept_states;
+
+      while not (Queue.is_empty unprocessed) do
+        let current = Queue.take unprocessed in
+
+        if not (Hashtbl.mem processed current) then begin
+          Hashtbl.add processed current true;
+
+          List.iter (fun symbol ->
+              let moved = move nfa current symbol in
+              if moved <> [] then begin
+                let target = epsilon_closure nfa moved |> make_dfa_state in
+
+                if not (DFA.mem_vertex dfa target) then begin
+                  DFA.add_vertex dfa target;
+
+                  if contains_accepting_state target then
+                    if not (List.exists (AutomatonStateSet.equal target) !accept_states) then
+                      accept_states := target :: !accept_states;
+
+                  if not (Hashtbl.mem processed target) then
+                    Queue.add target unprocessed
+                end;
+
+                DFA.add_edge_e dfa 
+                  (current, AutomatonTransition.OnSymbol symbol, target)
+              end
+            ) alphabet
+        end
+      done;
+
+      { start_state = start_closure
+      ; accept_states = !accept_states
+      ; graph = dfa
+      }
+
+    let find_dead_states dfacon =
+      let dfa = dfacon.graph in
+      let accept_states = dfacon.accept_states in
+
+      let can_reach_accept = Hashtbl.create (DFA.nb_vertex dfa) in
+
+      List.iter (fun s -> Hashtbl.add can_reach_accept s true) accept_states;
+
+      let queue = Queue.create () in
+      List.iter (fun s -> Queue.add s queue) accept_states;
+
+      while not (Queue.is_empty queue) do
+        let current = Queue.take queue in
+        try
+          DFA.pred dfa current
+          |> List.iter (fun pred ->
+              if not (Hashtbl.mem can_reach_accept pred) then begin
+                Hashtbl.add can_reach_accept pred true;
+                Queue.add pred queue
+              end)
+        with Invalid_argument _ -> ()
+      done;
+
+      DFA.fold_vertex 
+        (fun v acc -> 
+           if not (Hashtbl.mem can_reach_accept v) then v :: acc else acc)
+        dfa []
+
+    let remove_unreachable dfacon =
+      let dfa = dfacon.graph in
+      let start = dfacon.start_state in
+
+      let reachable = Hashtbl.create (DFA.nb_vertex dfa) in
+      let queue = Queue.create () in
+
+      Queue.add start queue;
+      Hashtbl.add reachable start true;
+
+      while not (Queue.is_empty queue) do
+        let current = Queue.take queue in
+        try
+          DFA.succ dfa current
+          |> List.iter (fun succ ->
+              if not (Hashtbl.mem reachable succ) then begin
+                Hashtbl.add reachable succ true;
+                Queue.add succ queue
+              end)
+        with Invalid_argument _ -> ()
+      done;
+
+      DFA.iter_vertex 
+        (fun v -> 
+           if not (Hashtbl.mem reachable v) then
+             DFA.remove_vertex dfa v)
+        (DFA.copy dfa);        
+      dfacon
+
+    let minimize dfacon =
+      let dfa = dfacon.graph in
+      let states = DFA.fold_vertex (fun v acc -> v :: acc) dfa [] in
+
+      if List.length states <= 1 then dfacon
+      else
+        let initial_partition = 
+          let accepting, non_accepting = 
+            List.partition 
+              (fun s -> List.exists (AutomatonStateSet.equal s) dfacon.accept_states) 
+              states 
+          in
+          match accepting, non_accepting with
+          | [], _ -> [non_accepting]
+          | _, [] -> [accepting]
+          | _ -> [accepting; non_accepting]
+        in
+
+        let find_partition partitions state =
+          List.find_index (fun p -> List.mem state p) partitions
+        in
+
+        let rec refine partitions =
+          let alphabet = collect_alphabet dfacon.graph in
+          let changed = ref false in
+
+          let new_partitions = 
+            List.fold_left (fun acc partition ->
+                if List.length partition <= 1 then
+                  partition :: acc
+                else
+                  let split_groups = Hashtbl.create 10 in
+
+                  List.iter (fun state ->
+                      let signature = 
+                        List.map (fun symbol ->
+                            try
+                              let edges = DFA.find_all_edges dfa state state in
+                              let target_opt = 
+                                List.find_map (fun edge ->
+                                    match DFA.E.label edge with
+                                    | AutomatonTransition.OnSymbol ch when ch = symbol ->
+                                      Some (DFA.E.dst edge)
+                                    | _ -> None) edges
+                              in
+                              match target_opt with
+                              | Some target -> find_partition partitions target
+                              | None -> None
+                            with Not_found -> None
+                          ) alphabet
+                      in
+
+                      let key = Marshal.to_string signature [] in
+                      let group = 
+                        try Hashtbl.find split_groups key
+                        with Not_found -> []
+                      in
+                      Hashtbl.replace split_groups key (state :: group)
+                    ) partition;
+
+                  let groups = Hashtbl.fold (fun _ group acc -> group :: acc) split_groups [] in
+                  if List.length groups > 1 then changed := true;
+                  groups @ acc
+              ) [] partitions
+          in
+
+          if !changed then refine new_partitions else partitions
+        in
+
+        let final_partitions = refine initial_partition in
+
+        let min_dfa = DFA.create () in
+
+        let representatives = Hashtbl.create (List.length final_partitions) in
+        List.iter (fun partition ->
+            match partition with
+            | [] -> ()
+            | rep :: _ -> 
+              List.iter (fun s -> Hashtbl.add representatives s rep) partition;
+              DFA.add_vertex min_dfa rep
+          ) final_partitions;
+
+        DFA.iter_edges_e (fun edge ->
+            let src = DFA.E.src edge in
+            let dst = DFA.E.dst edge in
+            let label = DFA.E.label edge in
+
+            try
+              let min_src = Hashtbl.find representatives src in
+              let min_dst = Hashtbl.find representatives dst in
+
+              if not (DFA.mem_edge_e min_dfa (min_src, label, min_dst)) then
+                DFA.add_edge_e min_dfa (min_src, label, min_dst)
+            with Not_found -> ()
+          ) dfa;
+
+        let min_start = 
+          try Hashtbl.find representatives dfacon.start_state
+          with Not_found -> dfacon.start_state
+        in
+
+        let min_accepts = 
+          List.fold_left (fun acc s ->
+              try
+                let rep = Hashtbl.find representatives s in
+                if List.exists (AutomatonStateSet.equal rep) acc then acc
+                else rep :: acc
+              with Not_found -> acc
+            ) [] dfacon.accept_states
+        in
+
+        { start_state = min_start
+        ; accept_states = min_accepts
+        ; graph = min_dfa
+        }
+
+    let accepts dfacon input =
+      let dfa = dfacon.graph in
+
+      let rec process_string current_state chars =
+        match chars with
+        | [] -> 
+          List.exists (AutomatonStateSet.equal current_state) dfacon.accept_states
+        | ch :: rest ->
+          try
+            let edges = DFA.succ_e dfa current_state in
+            let next_state_opt = 
+              List.find_map (fun edge ->
+                  match DFA.E.label edge with
+                  | AutomatonTransition.OnSymbol c when c = ch ->
+                    Some (DFA.E.dst edge)
+                  | AutomatonTransition.OnAny when ch <> '\n' ->
+                    Some (DFA.E.dst edge)
+                  | _ -> None) edges
+            in
+            match next_state_opt with
+            | None -> false            | Some next -> process_string next rest
+          with Invalid_argument _ -> false
+      in
+
+      process_string dfacon.start_state (List.of_seq (String.to_seq input))
   end
 end
