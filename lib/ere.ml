@@ -47,7 +47,7 @@ module ERE = struct
 
     let consume ere =
       let ch = peek ere in
-      p.cursor <- p.cursor + 1;
+      ere.cursor <- ere.cursor + 1;
       ch
 
     let consume_if ere pred =
@@ -101,6 +101,7 @@ module ERE = struct
           consume ere |> ignore;
           (1, -1)
         | Some '?' ->
+          consume ere |> ignore;
           (0, 1)
         | Some '{' ->
           consume ere |> ignore;
@@ -139,8 +140,8 @@ module ERE = struct
 
     and parse_hex ere =
       let hex_chars = consume_while ere (fun ch -> (ch >= '0' && ch <= '9') 
-                                                   && (ch >= 'a' && ch <= 'f')
-                                                   && (ch >= 'A' && ch <= 'F')) in
+                                                   || (ch >= 'a' && ch <= 'f')
+                                                   || (ch >= 'A' && ch <= 'F')) in
       if List.is_empty hex_chars 
       then 0
       else (Awk2CUtils.string_to_integer 16 (String.of_seq (List.to_seq hex_chars)))
@@ -181,10 +182,8 @@ module ERE = struct
       | 'v' -> '\x08'
       | 'a' -> '\x07'
       | 'x' | 'u' ->
-        let hex_num = parse_hex ere in
-        match hex_num with
-        | Some code -> Char.code code
-        | None -> raise Syntax_error
+        let hex_code = parse_hex ere in
+        Char.chr hex_code
 
     and lookup_classname clsnm =
       match clsnm with
@@ -244,7 +243,7 @@ module ERE = struct
       ; accepting = false
       }
 
-    let create ?accepting:(false) () =
+    let create ?accepting:(accepting=false) () =
       { uid = next_uid ()
       ; accepting = accepting
       }
@@ -262,8 +261,35 @@ module ERE = struct
     let default = Epsilon
   end
 
+  module AutomatonStateSet = struct
+    type t = AutomatonState.t list
+
+    let compare ss1 ss2 = List.compare ss1 ss2
+    let hash ss = List.fold_left (fun s acc -> (AutomatonState.hash s) + acc) 0 ss
+    let equal ss1 ss2 = (=) ss1 ss2
+
+    let create () = []
+
+    let add ss s = 
+      if List.mem ss s
+      then ss
+      else s :: ss
+
+    let remove ss s =
+      List.filter (fun s -> not List.mem ss s) ss
+
+    let union ss1 ss2 =
+      ss1 @ ss2
+
+    let intersect ss1 ss2 =
+      List.filter (fun s -> List.mem ss1 s && List.mem ss2 s) (ss1 @ ss2)
+
+    let difference ss1 ss2 =
+      List.filter (fun s -> List.mem ss1 s && not List.mem ss2 s) (ss1 @ ss2)
+  end
+
   module NFA = Graph.Imperative.Digraph.ConcreteLabeled(AutomatonState)(AutomatonTransition)
-  module DFA = Graph.Imperative.Digraph.ConcreteLabeled(AutomatonState)(AutomatonTransition)
+  module DFA = Graph.Imperative.Digraph.ConcreteLabeled(AutomatonStateSet)(AutomatonTransition)
 
   module NFAConstructor = struct
     type t =
@@ -327,7 +353,7 @@ module ERE = struct
       match lst with
       | [] ->
         let new_start = AutomatonState.create () in
-        let new_accept = AutomatonState.create ~accpeting:true () in
+        let new_accept = AutomatonState.create ~accepting:true () in
         add_transition nfacon new_start Epsilon new_accept;
       | [single] -> build_nfa nfacon single
       | head :: tail ->
@@ -339,12 +365,12 @@ module ERE = struct
             let nfa_next = build_nfa nfacon x in
             add_transition nfacon nfas.accept_state Epsilon nfa_next.start_state;
             concat_rest (create_fragment nfas.start_state nfas.accept_state nfacon.graph) xs in
-        concat_rest nfa_first tl
+        concat_rest nfa_first tail
 
     and build_group nfacon expr =
       build_nfa nfacon expr
 
-    and uild_brack nfacon lst neg =
+    and build_brack nfacon lst neg =
       let open Absyn in
       let new_start = AutomatonState.create () in
       let new_accept = AutomatonState.create ~accepting:true () in
@@ -371,7 +397,6 @@ module ERE = struct
         if ch != '\n' then
           add_transition nfacon new_start (OnSymbol ch) new_accept
       done;
-      (* add_transition nfacon new_start (OnSymbol '\t') new_accept *)
       { start_state = new_start
       ; accept_state = new_accept
       ; graph = nfacon.graph
@@ -390,6 +415,26 @@ module ERE = struct
       let new_accept = AutomatonState.create ~accepting:true () in
       add_transition nfacon new_start VirtualEnd new_accept;
       { start_state = new_start; accept_state = new_accept; graph = nfacon.graph }
+
+    and build_literal nfacon ch =
+      let open Absyn in
+      let new_start = AutomatonState.create () in
+      let new_accept = AutomatonState.create ~accepting:true () in
+      add_transition nfacon new_start (OnSymbol ch) new_accept;
+      { start_state = new_start; accept_state = new_accept; graph = nfacon.graph }
+
+    and build_alt nfacon left right =
+      let open Absyn in
+      let left_nfa = build_nfa nfacon left in
+      let right_nfa = build_nfa nfacon right in
+      let new_start = AutomatonState.create () in
+      let new_accept = AutomatonState.create ~accepting:true () in
+      add_transition nfacon new_start Epsilon left_nfa.start_state;
+      add_transition nfacon new_start Epsilon right_nfa.start_state;
+      add_transition nfacon left_nfa.accept_state Epsilon new_accept;
+      add_transition nfacon right_nfa.accept_state Epsilon new_accept;
+      { start_state = new_start; accept_state = new_accept; graph = nfacon.graph }
+
 
     and build_repeat nfacon expr min max =
       let open Absyn in
@@ -475,5 +520,15 @@ module ERE = struct
       add_transition nfacon nfacon.start_state Epsilon nfa.start_state;
       add_transition nfacon nfa.accept_state Epsilon nfacon.accept_state;
       nfacon
+  end
+
+  module DFAConstructor = struct
+    type t =
+      { start_state: AutomatonStateSet.t
+      ; accept_state: AutomatonStateSet.t
+      ; graph: DFA.t
+      }
+
+    (* TODO: Implement *)
   end
 end
