@@ -1,4 +1,4 @@
-(library
+ (library
  (name awk2c.lib)
  (public_name awk2c.lib)
  (modules ast flow symtbl instr lexer parser ere)
