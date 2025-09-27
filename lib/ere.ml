@@ -55,12 +55,14 @@ module ERE = struct
       | Some ch when ch = pred ->
         consume ere |> ignore;
         true
-          _ -> false
+      | _ -> false
 
     let consume_while ere pred =
       let aux acc =
         match (peek_opt ere) with
-        | Some ch when (pred ch) -> aux (ch :: acc)
+        | Some ch when (pred ch) -> 
+          consume ere |> ignore;
+          aux (ch :: acc)
         | _ -> List.rev acc
       in 
       aux []
@@ -114,7 +116,7 @@ module ERE = struct
       in
       if (min = -1) && (max = -1)
       then atom_node
-      else Absyn.Repeat (atom_node, min. max)
+      else Absyn.Repeat (atom_node, min, max)
 
     and parse_atom ere =
       let ch = consume ere in
@@ -151,21 +153,21 @@ module ERE = struct
       let rec aux acc =
         match (peek_opt ere) with
         | Some ':' -> 
-          let class_name = consume_while ere (fun ch -> ch >= 'a' && ch <= 'z') in
-          match class_name with
-          | Some clsnm -> aux ((lookup_classname clsnm) @ acc)
-          | _ -> raise Syntax_error
-          | Some ']' -> 
-            consume ere |> ignore; 
-            List.rev acc
-          | Some sym1 ->
-            consume ere |> ignore;
-            (match peek_opt ere with
-             | Some '-' when peek_next ere != ']' ->
-               consume ere |> ignore;
-               let sym2 = consume ere in
-               aux ((gen_char_range sym1 sym2) @ acc)
-             | _ -> aux (sym1 :: acc))
+          (let class_name = consume_while ere (fun ch -> ch >= 'a' && ch <= 'z') in
+           match class_name with
+           | Some clsnm -> aux ((lookup_classname clsnm) @ acc)
+           | _ -> raise Syntax_error)
+        | Some ']' -> 
+          consume ere |> ignore; 
+          List.rev acc
+        | Some sym1 ->
+          consume ere |> ignore;
+          (match peek_opt ere with
+           | Some '-' when peek_next ere != ']' ->
+             consume ere |> ignore;
+             let sym2 = consume ere in
+             aux ((gen_char_range sym1 sym2) @ acc)
+           | _ -> aux (sym1 :: acc))
       in
       Absyn.Brack (aux [], negated)
 
@@ -179,11 +181,12 @@ module ERE = struct
       | '\'' -> '\''
       | '\\' -> '\\'
       | 'f' -> '\x0C'
-      | 'v' -> '\x08'
+      | 'v' -> '\x0B'
       | 'a' -> '\x07'
       | 'x' | 'u' ->
-        let hex_code = parse_hex ere in
-        Char.chr hex_code
+        (let hex_code = parse_hex ere in
+         Char.chr hex_code)
+      | _ -> raise Syntax_error
 
     and lookup_classname clsnm =
       match clsnm with
@@ -264,28 +267,28 @@ module ERE = struct
   module AutomatonStateSet = struct
     type t = AutomatonState.t list
 
-    let compare ss1 ss2 = List.compare ss1 ss2
+    let compare ss1 ss2 = List.compare AutomatonState.compare ss1 ss2
     let hash ss = List.fold_left (fun s acc -> (AutomatonState.hash s) + acc) 0 ss
     let equal ss1 ss2 = (=) ss1 ss2
 
     let create () = []
 
     let add ss s = 
-      if List.mem ss s
+      if List.mem s ss
       then ss
       else s :: ss
 
     let remove ss s =
-      List.filter (fun s -> not List.mem ss s) ss
+      List.filter (fun s' -> not AutomatonState.equal s s') ss
 
     let union ss1 ss2 =
       ss1 @ ss2
 
     let intersect ss1 ss2 =
-      List.filter (fun s -> List.mem ss1 s && List.mem ss2 s) (ss1 @ ss2)
+      List.filter (fun s -> List.mem s ss1 && List.mem s ss2) (ss1 @ ss2)
 
     let difference ss1 ss2 =
-      List.filter (fun s -> List.mem ss1 s && not List.mem ss2 s) (ss1 @ ss2)
+      List.filter (fun s -> List.mem s ss1 && not List.mem s ss2) (ss1 @ ss2)
   end
 
   module NFA = Graph.Imperative.Digraph.ConcreteLabeled(AutomatonState)(AutomatonTransition)
@@ -331,19 +334,21 @@ module ERE = struct
       let open Absyn in
       if n <= 0 then
         let new_start = AutomatonState.create () in
-        let new_accept = AutomatonState.create () ~accepting:true in
+        let new_accept = AutomatonState.create ~accepting:true () in
         add_transition nfacon new_start Epsilon new_accept;
         { start_state = new_start
         ; accept_state = new_accept
         ; graph = nfacon.graph
         }
-      else 
+      else
+        let new_start = AutomatonState.create () in
+        let new_end = AutomatonState.create ~accepting:true () in
         let rec build_chain count current_nfa =
           if count = n then current_nfa
           else
             let next_nfa = build_nfa nfacon expr in
             add_transition nfacon current_nfa.accept_state Epsilon next_nfa.start_state;
-            build_chain (count + 1) (create_fragment new_start new_accept nfacib.graph)
+            build_chain (count + 1) (create_fragment new_start new_accept nfacon.graph)
         in
         let first_nfa = build_nfa nfacon expr in
         build_chain 1 first_nfa
@@ -355,6 +360,7 @@ module ERE = struct
         let new_start = AutomatonState.create () in
         let new_accept = AutomatonState.create ~accepting:true () in
         add_transition nfacon new_start Epsilon new_accept;
+        { start_state = new_start; accept_state = new_accept; graph = nfacon.graph }
       | [single] -> build_nfa nfacon single
       | head :: tail ->
         let nfa_first = build_nfa nfacon head in
@@ -382,7 +388,7 @@ module ERE = struct
             add_transition nfacon new_start (OnSymbol ch) new_accept
         done
       else
-        List.iter (fun ch -> add_transition new_start (OnSymbol ch) new_accept) lst;
+        List.iter (fun ch -> add_transition nfacon new_start (OnSymbol ch) new_accept) lst;
       { start_state = new_start
       ; accept_state = new_accept
       ; graph = nfacon.graph
